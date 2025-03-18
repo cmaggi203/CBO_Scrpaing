@@ -34,18 +34,16 @@ async function scrapeThegef() {
     $(".focal-point-country").each((index, element) => {
         let country = $(element).find("h2").text().trim();
 
-        // Split into sections for each person based on <h4> (each person has their own <h4>)
         let persons = $(element).html().split(/<h4>/).slice(1);
 
         persons.forEach(personHtml => {
-            let person$ = cheerio.load("<h4>" + personHtml); // Re-wrap in <h4> for parsing
+            let person$ = cheerio.load("<h4>" + personHtml); 
             let name = person$("h4").text().trim();
 
             let parts = personHtml.split("<br>");
             let title = parts.length > 1 ? parts[1].trim() : "";
             let organization = parts.length > 2 ? parts[2].trim() : "";
 
-            // Extract all email variations
             let emailRegex = /([\w.-]+)\s*(?:\[a t \]|\(A T\)| at |\(AT\)|\(a t \)|\(at\)|\(AT\))\s*([\w.-]+)/gi;
             let emails = [];
             let match;
@@ -122,6 +120,48 @@ async function scrapeUnep() {
     });
 }
 
+async function scrapeBrsmeas() {
+    let response = await fetch("https://informea.pops.int/Contacts2/brsContacts.svc/Contacts?$callback=jQuery112407286579056920082_1742257663983&%24inlinecount=allpages&%24format=json&%24top=1500&%24orderby=brsPartyNameEn%2CbrsTreatyName%2Cprimary+desc%2ClastName", {
+        "headers": {
+            "accept": "*/*",
+            "accept-language": "en-US,en;q=0.9",
+            "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "sec-fetch-dest": "script",
+            "sec-fetch-mode": "no-cors",
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-storage-access": "active",
+            "Referer": "https://www.brsmeas.org/",
+            "Referrer-Policy": "strict-origin-when-cross-origin"
+        },
+        "body": null,
+        "method": "GET"
+    });
+
+    if (!response.ok) {
+        console.error(`Failed to fetch page: ${response.status} ${response.statusText}`);
+        return;
+    }
+
+    const text = await response.text();
+
+    const jsonText = text.match(/\{.*\}/s)?.[0];
+    const json = JSON.parse(jsonText);
+
+    json.d.results.forEach(item => {
+        const country = item.brsPartyNameEn || item.country || "";
+        const name = item.brsFullName || `${item.prefix || ""} ${item.firstName || ""} ${item.lastName || ""}`.trim();
+        const title = item.position || "";
+        const organization = item.institution || "";
+        const emails = item.brsEmails ? item.brsEmails.split(/[,;]/).map(email => email.trim()) : [];
+        const email1 = emails[0] || "";
+        const email2 = emails[1] || "";
+
+        result.push({ country, name, title, organization, email1, email2 });
+    });
+}
+
 async function exportExcel() {
     let workbook = new ExcelJS.Workbook();
     let worksheet = workbook.addWorksheet("Scraped Data");
@@ -144,23 +184,22 @@ async function exportExcel() {
 async function main() {
     await scrapeThegef();
     await scrapeUnep();
+    await scrapeBrsmeas();
 
     if (result.length === 0) {
         console.log("No data found. Check your selectors.");
         return;
     }
 
-    // Remove duplicate names (keep only the first occurrence)
     let seenNames = new Set();
     result = result.filter(entry => {
         if (seenNames.has(entry.name)) {
-            return false; // Skip duplicate
+            return false; 
         }
         seenNames.add(entry.name);
         return true;
     });
 
-    // Sort by country name (A-Z)
     result.sort((a, b) => a.country.localeCompare(b.country));
     exportExcel();
 }
